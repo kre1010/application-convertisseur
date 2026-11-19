@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fdn-monney-v1';
+const CACHE_NAME = 'fdn-monney-v2'; // Passe v1 à v2
 const ASSETS_TO_CACHE = [
   './',
   './index.html'
