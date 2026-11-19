@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#05060a">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NovaFX — Convertisseur de Devises 3D</title>
+    <!-- Chargement de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chargement de Three.js pour les sphères 3D -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Chargement de la police Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Icônes Phosphor -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        obsidian: '#06070a',
+                        surface: 'rgba(17, 20, 28, 0.65)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Styles personnalisés pour les effets 3D, glassmorphism et animations fluides */
+        body {
+            background-color: #050608;
+            color: #f8fafc;
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        #canvas-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Effet Glassmorphism Premium */
+        .glass-card {
+            background: linear-gradient(145deg, rgba(22, 26, 38, 0.72) 0%, rgba(12, 14, 20, 0.85) 100%);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 
+                0 25px 50px -12px rgba(0, 0, 0, 0.75),
+                inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+        }
+
+        .glass-input-box {
+            background: rgba(8, 10, 15, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .glass-input-box:focus-within {
+            background: rgba(12, 15, 23, 0.85);
+            border-color: rgba(99, 102, 241, 0.5);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+        }
+
+        /* Suppression des flèches par défaut des inputs numériques */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+
+        /* Animation bouton swap */
+        .swap-btn {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            box-shadow: 0 8px 20px -4px rgba(99, 102, 241, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+        }
+
+        .swap-btn:hover {
+            box-shadow: 0 12px 26px -4px rgba(99, 102, 241, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+        }
+
+        .swap-btn:active {
+            transform: scale(0.92);
+        }
+
+        /* Scrollbar personnalisée pour la liste déroulante */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 5px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.3);
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.4);
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.7);
+        }
+
+        /* Halo ambiant subtil */
+        .ambient-glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(130px);
+            opacity: 0.16;
+            pointer-events: none;
+            z-index: 0;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-indigo-500/30 selection:text-indigo-200">
+
+    <!-- Halos lumineux d'arrière-plan -->
+    <div class="ambient-glow bg-indigo-600 -top-40 -left-40"></div>
+    <div class="ambient-glow bg-fuchsia-600 -bottom-40 -right-40"></div>
+
+    <!-- Canvas Three.js pour les bulles/sphères 3D -->
+    <canvas id="canvas-bg"></canvas>
+
+    <!-- Barre de navigation supérieure -->
+    <header class="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-2 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-cyan-400 p-[1px] shadow-lg shadow-indigo-500/20">
+                <div class="w-full h-full bg-[#090b10] rounded-xl flex items-center justify-center">
+                    <i class="ph-bold ph-currency-eth text-xl text-transparent bg-clip-text bg-gradient-to-tr from-indigo-400 to-cyan-300"></i>
+                </div>
+            </div>
+            <div>
+                <span class="font-bold text-lg tracking-tight text-white">Nova<span class="text-indigo-400">FX</span></span>
+                <span class="hidden sm:inline-block ml-2 text-[11px] font-medium uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">Pro Terminal</span>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3 text-xs">
+            <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] backdrop-blur-md">
+                <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span class="text-slate-300 font-medium">Marchés actifs</span>
+                <span id="live-clock" class="hidden md:inline font-mono text-slate-400 border-l border-white/10 pl-2">12:00:00</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenu Principal -->
+    <main class="relative z-10 flex-grow flex items-center justify-center px-4 py-8">
+        <div class="w-full max-w-xl">
+            
+            <!-- En-tête de la carte -->
+            <div class="text-center mb-6">
+                <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-1.5">
+                    Convertisseur de Devises
+                </h1>
+                <p class="text-sm text-slate-400">
+                    Taux interbancaires en temps réel & actifs numériques
+                </p>
+            </div>
+
+            <!-- Carte Glassmorphism Principale -->
+            <div class="glass-card rounded-3xl p-5 sm:p-7 relative">
+                
+                <!-- Section 1 : Montant Source -->
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center text-xs font-medium text-slate-400 px-1">
+                        <span>Vous envoyez</span>
+                        <div class="flex gap-1.5">
+                            <button type="button" data-preset="100" class="preset-btn px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-indigo-500/20 hover:text-indigo-300 border border-white/[0.06] transition">100</button>
+                            <button type="button" data-preset="1000" class="preset-btn px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-indigo-500/20 hover:text-indigo-300 border border-white/[0.06] transition">1 000</button>
+                            <button type="button" data-preset="5000" class="preset-btn px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-indigo-500/20 hover:text-indigo-300 border border-white/[0.06] transition">5 000</button>
+                        </div>
+                    </div>
+
+                    <div class="glass-input-box rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3">
+                        <div class="flex-1 min-w-0">
+                            <input 
+                                type="number" 
+                                id="amount-from" 
+                                value="1000" 
+                                min="0" 
+                                step="any"
+                                placeholder="0.00"
+                                class="w-full bg-transparent text-2xl sm:text-3xl font-mono font-semibold text-white placeholder-slate-600 focus:outline-none"
+                            >
+                            <div id="from-name-sub" class="text-xs text-slate-400 truncate mt-1">Euro</div>
+                        </div>
+
+                        <!-- Sélecteur Devise Source -->
+                        <div class="relative">
+                            <button type="button" id="btn-from" class="flex items-center gap-2.5 bg-white/[0.06] hover:bg-white/[0.11] border border-white/10 rounded-xl px-3.5 py-2.5 transition cursor-pointer">
+                                <span id="flag-from" class="text-xl leading-none">🇪🇺</span>
+                                <span id="code-from" class="font-semibold text-sm sm:text-base text-white tracking-wide">EUR</span>
+                                <i class="ph-bold ph-caret-down text-xs text-slate-400"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bouton d'inversion central -->
+                <div class="relative h-4 flex items-center justify-center z-20 my-1">
+                    <button 
+                        type="button" 
+                        id="swap-button" 
+                        title="Inverser les devises"
+                        class="swap-btn w-11 h-11 rounded-2xl flex items-center justify-center text-white cursor-pointer border border-white/20"
+                    >
+                        <i id="swap-icon" class="ph-bold ph-arrows-down-up text-lg transition-transform duration-500"></i>
+                    </button>
+                </div>
+
+                <!-- Section 2 : Montant Converti -->
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center text-xs font-medium text-slate-400 px-1">
+                        <span>Vous recevez (estimé)</span>
+                        <button type="button" id="copy-result" class="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 transition cursor-pointer">
+                            <i class="ph ph-copy text-sm"></i>
+                            <span id="copy-text">Copier</span>
+                        </button>
+                    </div>
+
+                    <div class="glass-input-box rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3">
+                        <div class="flex-1 min-w-0">
+                            <input 
+                                type="number" 
+                                id="amount-to" 
+                                value="1084.50" 
+                                min="0" 
+                                step="any"
+                                placeholder="0.00"
+                                class="w-full bg-transparent text-2xl sm:text-3xl font-mono font-semibold text-indigo-300 placeholder-slate-600 focus:outline-none"
+                            >
+                            <div id="to-name-sub" class="text-xs text-slate-400 truncate mt-1">Dollar américain</div>
+                        </div>
+
+                        <!-- Sélecteur Devise Cible -->
+                        <div class="relative">
+                            <button type="button" id="btn-to" class="flex items-center gap-2.5 bg-white/[0.06] hover:bg-white/[0.11] border border-white/10 rounded-xl px-3.5 py-2.5 transition cursor-pointer">
+                                <span id="flag-to" class="text-xl leading-none">🇺🇸</span>
+                                <span id="code-to" class="font-semibold text-sm sm:text-base text-white tracking-wide">USD</span>
+                                <i class="ph-bold ph-caret-down text-xs text-slate-400"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panneau d'informations de taux & Variation 24h -->
+                <div class="mt-6 pt-5 border-t border-white/[0.07] space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2 bg-white/[0.02] rounded-2xl p-3.5 border border-white/[0.05]">
+                        <div>
+                            <div class="text-[11px] uppercase tracking-wider text-slate-400 font-medium">Taux de change actuel</div>
+                            <div id="rate-display" class="font-mono text-sm sm:text-base font-semibold text-white mt-0.5">
+                                1 EUR = 1.0845 USD
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span id="trend-badge" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <i class="ph-bold ph-trend-up"></i>
+                                +0.42% (24h)
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Mini Graphique SVG Sparkline simulé & Conversions rapides -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <!-- Sparkline 7 jours -->
+                        <div class="bg-white/[0.02] rounded-2xl p-3.5 border border-white/[0.05] flex flex-col justify-between relative">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-xs text-slate-400">Tendance 7 jours</span>
+                                <span class="text-[11px] font-mono text-indigo-300" id="sparkline-range">Min/Max</span>
+                            </div>
+                            <div class="relative w-full h-11">
+                                <svg id="sparkline-svg" class="w-full h-full overflow-visible" viewBox="0 0 160 40" preserveAspectRatio="none">
+                                    <defs>
+                                        <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                                            <stop id="spark-stop-top" offset="0%" stop-color="#818cf8" stop-opacity="0.38"/>
+                                            <stop id="spark-stop-bottom" offset="100%" stop-color="#818cf8" stop-opacity="0.0"/>
+                                        </linearGradient>
+                                    </defs>
+                                    <path id="spark-area" d="" fill="url(#sparkGrad)"></path>
+                                    <path id="spark-line" d="" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    <g id="spark-points"></g>
+                                </svg>
+                                <div id="spark-tooltip" class="hidden pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded bg-slate-900/95 border border-indigo-500/40 text-[10px] font-mono text-white whitespace-nowrap shadow-lg z-30"></div>
+                            </div>
+                        </div>
+
+                        <!-- Historique récent -->
+                        <div class="bg-white/[0.02] rounded-2xl p-3.5 border border-white/[0.05]">
+                            <div class="flex justify-between items-center mb-1.5">
+                                <span class="text-xs text-slate-400">Conversions récentes</span>
+                                <button id="save-history-btn" class="text-[11px] text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer">+ Épingler</button>
+                            </div>
+                            <ul id="history-list" class="space-y-1 text-xs font-mono text-slate-300 max-h-12 overflow-y-auto custom-scrollbar">
+                                <!-- Rempli dynamiquement -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Barres de raccourcis paires populaires -->
+            <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
+                <span class="text-xs text-slate-500 mr-1">Populaires :</span>
+                <button data-pair="EUR-USD" class="pair-chip text-xs px-3 py-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 border border-white/[0.06] transition cursor-pointer">🇪🇺 EUR / 🇺🇸 USD</button>
+                <button data-pair="EUR-CHF" class="pair-chip text-xs px-3 py-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 border border-white/[0.06] transition cursor-pointer">🇪🇺 EUR / 🇨🇭 CHF</button>
+                <button data-pair="USD-JPY" class="pair-chip text-xs px-3 py-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 border border-white/[0.06] transition cursor-pointer">🇺🇸 USD / 🇯🇵 JPY</button>
+                <button data-pair="EUR-BTC" class="pair-chip text-xs px-3 py-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 border border-white/[0.06] transition cursor-pointer">🇪🇺 EUR / ₿ BTC</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modale de sélection de devise (Overlay Glassmorphism) -->
+    <div id="currency-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/70 backdrop-blur-sm opacity-0 transition-opacity duration-200">
+        <div class="glass-card w-full max-w-md rounded-3xl p-5 border border-white/10 shadow-2xl transform scale-95 transition-transform duration-200" id="modal-content">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-base font-semibold text-white">Sélectionner une devise</h3>
+                <button id="close-modal" class="w-8 h-8 rounded-full bg-white/[0.05] hover:bg-white/[0.1] flex items-center justify-center text-slate-400 hover:text-white transition cursor-pointer">
+                    <i class="ph-bold ph-x"></i>
+                </button>
+            </div>
+
+            <!-- Barre de recherche -->
+            <div class="relative mb-3">
+                <i class="ph ph-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input 
+                    type="text" 
+                    id="currency-search" 
+                    placeholder="Rechercher (code, pays, devise...)" 
+                    class="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60"
+                >
+            </div>
+
+            <!-- Filtres par catégorie -->
+            <div class="flex items-center gap-1.5 mb-3">
+                <button type="button" data-filter="all" class="filter-tab active-tab px-3 py-1 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 transition cursor-pointer">Toutes (165+)</button>
+                <button type="button" data-filter="popular" class="filter-tab px-3 py-1 rounded-lg text-xs font-medium bg-white/[0.04] text-slate-400 hover:text-white border border-white/[0.06] transition cursor-pointer">Populaires</button>
+                <button type="button" data-filter="crypto" class="filter-tab px-3 py-1 rounded-lg text-xs font-medium bg-white/[0.04] text-slate-400 hover:text-white border border-white/[0.06] transition cursor-pointer">Crypto</button>
+            </div>
+
+            <!-- Liste des devises -->
+            <div id="currency-list" class="max-h-72 overflow-y-auto custom-scrollbar space-y-1 pr-1">
+                <!-- Généré via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Pied de page discret -->
+    <footer class="relative z-10 text-center py-4 px-4 text-xs text-slate-500">
+        NovaFX Interface Concept • Rendu 3D WebGL temps réel & Glassmorphism
+    </footer>
+
+    <script>
+        /**
+         * 1. BASE DE DONNÉES COMPLÈTE DES DEVISES MONDIALES ISO 4217 + CRYPTOS (Base USD = 1.0)
+         */
+        const RAW_CURRENCIES = [
+            // Populaires & Majeures
+            ['EUR', 'Euro', 'Union européenne, France, Allemagne', '€', '🇪🇺', 0.922, 'popular', 0.12],
+            ['USD', 'Dollar américain', 'États-Unis', '$', '🇺🇸', 1.000, 'popular', 0.00],
+            ['GBP', 'Livre sterling', 'Royaume-Uni', '£', '🇬🇧', 0.788, 'popular', -0.18],
+            ['CHF', 'Franc suisse', 'Suisse, Liechtenstein', 'CHF', '🇨🇭', 0.886, 'popular', 0.15],
+            ['JPY', 'Yen japonais', 'Japon', '¥', '🇯🇵', 151.95, 'popular', 0.87],
+            ['CAD', 'Dollar canadien', 'Canada', 'CA$', '🇨🇦', 1.366, 'popular', -0.24],
+            ['AUD', 'Dollar australien', 'Australie', 'A$', '🇦🇺', 1.513, 'popular', 0.31],
+            ['CNY', 'Yuan chinois (Renminbi)', 'Chine', '¥', '🇨🇳', 7.234, 'popular', 0.09],
+            ['MAD', 'Dirham marocain', 'Maroc', 'DH', '🇲🇦', 9.985, 'popular', 0.11],
+            ['DZD', 'Dinar algérien', 'Algérie', 'DA', '🇩🇿', 134.45, 'popular', -0.05],
+            ['TND', 'Dinar tunisien', 'Tunisie', 'DT', '🇹🇳', 3.112, 'popular', 0.08],
+            ['XOF', 'Franc CFA (BCEAO)', 'Sénégal, Côte d\'Ivoire, Mali, Bénin', 'CFA', '🇸🇳', 604.80, 'popular', 0.12],
+            ['XAF', 'Franc CFA (BEAC)', 'Cameroun, Gabon, Congo, Tchad', 'FCFA', '🇨🇲', 604.80, 'popular', 0.12],
+            ['AED', 'Dirham des Émirats', 'Émirats arabes unis', 'د.إ', '🇦🇪', 3.6725, 'popular', 0.01],
+            ['SAR', 'Riyal saoudien', 'Arabie saoudite', '﷼', '🇸🇦', 3.750, 'popular', 0.00],
+            ['BRL', 'Réal brésilien', 'Brésil', 'R$', '🇧🇷', 5.052, 'popular', -0.45],
+            ['INR', 'Roupie indienne', 'Inde', '₹', '🇮🇳', 83.38, 'popular', 0.14],
+            ['KRW', 'Won sud-coréen', 'Corée du Sud', '₩', '🇰🇷', 1352.0, 'popular', 0.52],
+            ['TRY', 'Livre turque', 'Turquie', '₺', '🇹🇷', 32.28, 'popular', -0.68],
+            ['ZAR', 'Rand sud-africain', 'Afrique du Sud', 'R', '🇿🇦', 18.74, 'popular', 0.39],
+
+            // Cryptomonnaies
+            ['BTC', 'Bitcoin', 'Actif numérique décentralisé', '₿', '🪙', 0.0000108, 'crypto', 3.64],
+            ['ETH', 'Ethereum', 'Réseau intelligent Web3', 'Ξ', '💎', 0.000315, 'crypto', 2.15],
+            ['SOL', 'Solana', 'Blockchain haute performance', 'SOL', '⚡', 0.0058, 'crypto', 4.42],
+
+            // Toutes les autres devises ISO 4217 (A -> Z)
+            ['AFN', 'Afghani afghan', 'Afghanistan', '؋', '🇦🇫', 71.20, 'fiat', 0.05],
+            ['ALL', 'Lek albanais', 'Albanie', 'L', '🇦🇱', 93.80, 'fiat', 0.19],
+            ['AMD', 'Dram arménien', 'Arménie', '֏', '🇦🇲', 388.50, 'fiat', -0.11],
+            ['ANG', 'Florin antillais', 'Curaçao, Saint-Martin', 'ƒ', '🇨🇼', 1.790, 'fiat', 0.00],
+            ['AOA', 'Kwanza angolais', 'Angola', 'Kz', '🇦🇴', 834.00, 'fiat', -0.30],
+            ['ARS', 'Peso argentin', 'Argentine', '$', '🇦🇷', 865.50, 'fiat', -0.82],
+            ['AWG', 'Florin arubais', 'Aruba', 'ƒ', '🇦🇼', 1.790, 'fiat', 0.00],
+            ['AZN', 'Manat azerbaïdjanais', 'Azerbaïdjan', '₼', '🇦🇿', 1.700, 'fiat', 0.00],
+            ['BAM', 'Mark convertible', 'Bosnie-Herzégovine', 'KM', '🇧🇦', 1.803, 'fiat', 0.12],
+            ['BBD', 'Dollar barbadien', 'Barbade', '$', '🇧🇧', 2.000, 'fiat', 0.00],
+            ['BDT', 'Taka bangladais', 'Bangladesh', '৳', '🇧🇩', 109.75, 'fiat', -0.09],
+            ['BGN', 'Lev bulgare', 'Bulgarie', 'лв', '🇧🇬', 1.803, 'fiat', 0.12],
+            ['BHD', 'Dinar bahreïni', 'Bahreïn', '.د.ب', '🇧🇭', 0.376, 'fiat', 0.00],
+            ['BIF', 'Franc burundais', 'Burundi', 'FBu', '🇧🇮', 2865.0, 'fiat', -0.14],
+            ['BMD', 'Dollar bermudien', 'Bermudes', '$', '🇧🇲', 1.000, 'fiat', 0.00],
+            ['BND', 'Dollar brunéien', 'Brunei', '$', '🇧🇳', 1.348, 'fiat', 0.07],
+            ['BOB', 'Boliviano bolivien', 'Bolivie', 'Bs.', '🇧🇴', 6.910, 'fiat', 0.00],
+            ['BSD', 'Dollar bahaméen', 'Bahamas', '$', '🇧🇸', 1.000, 'fiat', 0.00],
+            ['BTN', 'Ngultrum bhoutanais', 'Bhoutan', 'Nu.', '🇧🇹', 83.38, 'fiat', 0.14],
+            ['BWP', 'Pula botswanais', 'Botswana', 'P', '🇧🇼', 13.68, 'fiat', 0.22],
+            ['BYN', 'Rouble biélorusse', 'Biélorussie', 'Br', '🇧🇾', 3.265, 'fiat', -0.15],
+            ['BZD', 'Dollar bélizien', 'Belize', 'BZ$', '🇧🇿', 2.000, 'fiat', 0.00],
+            ['CDF', 'Franc congolais', 'RD Congo', 'FC', '🇨🇩', 2785.0, 'fiat', -0.25],
+            ['CLP', 'Peso chilien', 'Chili', '$', '🇨🇱', 948.50, 'fiat', 0.44],
+            ['COP', 'Peso colombien', 'Colombie', '$', '🇨🇴', 3890.0, 'fiat', 0.31],
+            ['CRC', 'Colón costaricien', 'Costa Rica', '₡', '🇨🇷', 504.20, 'fiat', 0.18],
+            ['CUP', 'Peso cubain', 'Cuba', '₱', '🇨🇺', 24.00, 'fiat', 0.00],
+            ['CVE', 'Escudo cap-verdien', 'Cap-Vert', '$', '🇨🇻', 101.65, 'fiat', 0.12],
+            ['CZK', 'Couronne tchèque', 'Tchéquie', 'Kč', '🇨🇿', 23.38, 'fiat', 0.27],
+            ['DJF', 'Franc djiboutien', 'Djibouti', 'Fdj', '🇩🇯', 177.72, 'fiat', 0.00],
+            ['DKK', 'Couronne danoise', 'Danemark, Groenland', 'kr', '🇩🇰', 6.878, 'fiat', 0.12],
+            ['DOP', 'Peso dominicain', 'République dominicaine', 'RD$', '🇩🇴', 59.05, 'fiat', -0.08],
+            ['EGP', 'Livre égyptienne', 'Égypte', 'E£', '🇪🇬', 47.85, 'fiat', -0.19],
+            ['ERN', 'Nakfa érythréen', 'Érythrée', 'Nfk', '🇪🇷', 15.00, 'fiat', 0.00],
+            ['ETB', 'Birr éthiopien', 'Éthiopie', 'Br', '🇪🇹', 56.85, 'fiat', -0.12],
+            ['FJD', 'Dollar fidjien', 'Fidji', 'FJ$', '🇫🇯', 2.255, 'fiat', 0.16],
+            ['FKP', 'Livre des Malouines', 'Îles Malouines', '£', '🇫🇰', 0.788, 'fiat', -0.18],
+            ['GEL', 'Lari géorgien', 'Géorgie', '₾', '🇬🇪', 2.675, 'fiat', 0.21],
+            ['GHS', 'Cedi ghanéen', 'Ghana', 'GH₵', '🇬🇭', 13.45, 'fiat', -0.34],
+            ['GIP', 'Livre de Gibraltar', 'Gibraltar', '£', '🇬🇮', 0.788, 'fiat', -0.18],
+            ['GMD', 'Dalasi gambien', 'Gambie', 'D', '🇬🇲', 67.80, 'fiat', -0.07],
+            ['GNF', 'Franc guinéen', 'Guinée', 'FG', '🇬🇳', 8590.0, 'fiat', 0.04],
+            ['GTQ', 'Quetzal guatémaltèque', 'Guatemala', 'Q', '🇬🇹', 7.785, 'fiat', 0.03],
+            ['GYD', 'Dollar guyanien', 'Guyana', 'G$', '🇬🇾', 209.20, 'fiat', 0.01],
+            ['HKD', 'Dollar de Hong Kong', 'Hong Kong', 'HK$', '🇭🇰', 7.832, 'fiat', 0.02],
+            ['HNL', 'Lempira hondurien', 'Honduras', 'L', '🇭🇳', 24.68, 'fiat', -0.02],
+            ['HTG', 'Gourde haïtienne', 'Haïti', 'G', '🇭🇹', 132.50, 'fiat', -0.06],
+            ['HUF', 'Forint hongrois', 'Hongrie', 'Ft', '🇭🇺', 363.40, 'fiat', 0.35],
+            ['IDR', 'Roupie indonésienne', 'Indonésie', 'Rp', '🇮🇩', 15920, 'fiat', -0.14],
+            ['ILS', 'Nouveau shekel israélien', 'Israël', '₪', '🇮🇱', 3.745, 'fiat', 0.28],
+            ['IQD', 'Dinar irakien', 'Irak', 'ع.د', '🇮🇶', 1310.0, 'fiat', 0.00],
+            ['IRR', 'Rial iranien', 'Iran', '﷼', '🇮🇷', 42050, 'fiat', 0.00],
+            ['ISK', 'Couronne islandaise', 'Islande', 'kr', '🇮🇸', 138.90, 'fiat', 0.19],
+            ['JMD', 'Dollar jamaïcain', 'Jamaïque', 'J$', '🇯🇲', 155.20, 'fiat', -0.05],
+            ['JOD', 'Dinar jordanien', 'Jordanie', 'JD', '🇯🇴', 0.709, 'fiat', 0.00],
+            ['KES', 'Shilling kényan', 'Kenya', 'KSh', '🇰🇪', 131.50, 'fiat', 0.41],
+            ['KGS', 'Som kirghize', 'Kirghizistan', 'с', '🇰🇬', 89.30, 'fiat', 0.06],
+            ['KHR', 'Riel cambodgien', 'Cambodge', '៛', '🇰🇭', 4045.0, 'fiat', 0.02],
+            ['KMF', 'Franc comorien', 'Comores', 'CF', '🇰🇲', 453.60, 'fiat', 0.12],
+            ['KWD', 'Dinar koweïtien', 'Koweït', 'KD', '🇰🇼', 0.3075, 'fiat', 0.03],
+            ['KYD', 'Dollar des Îles Caïmans', 'Îles Caïmans', '$', '🇰🇾', 0.833, 'fiat', 0.00],
+            ['KZT', 'Tenge kazakh', 'Kazakhstan', '₸', '🇰🇿', 446.80, 'fiat', 0.25],
+            ['LAK', 'Kip laotien', 'Laos', '₭', '🇱🇦', 21150, 'fiat', -0.18],
+            ['LBP', 'Livre libanaise', 'Liban', 'ل.ل', '🇱🇧', 89500, 'fiat', 0.00],
+            ['LKR', 'Roupie srilankaise', 'Sri Lanka', 'Rs', '🇱🇰', 298.50, 'fiat', 0.17],
+            ['LRD', 'Dollar libérien', 'Libéria', 'L$', '🇱🇷', 193.20, 'fiat', -0.09],
+            ['LSL', 'Loti lesothan', 'Lesotho', 'L', '🇱🇸', 18.74, 'fiat', 0.39],
+            ['LYD', 'Dinar libyen', 'Libye', 'LD', '🇱🇾', 4.835, 'fiat', 0.04],
+            ['MDL', 'Leu moldave', 'Moldavie', 'L', '🇲🇩', 17.68, 'fiat', 0.13],
+            ['MGA', 'Ariary malgache', 'Madagascar', 'Ar', '🇲🇬', 4420.0, 'fiat', -0.11],
+            ['MKD', 'Denar macédonien', 'Macédoine du Nord', 'ден', '🇲🇰', 56.75, 'fiat', 0.12],
+            ['MMK', 'Kyat birman', 'Myanmar (Birmanie)', 'K', '🇲🇲', 2100.0, 'fiat', 0.00],
+            ['MNT', 'Tugrik mongol', 'Mongolie', '₮', '🇲🇳', 3380.0, 'fiat', 0.05],
+            ['MOP', 'Pataca macanaise', 'Macao', 'MOP$', '🇲🇴', 8.065, 'fiat', 0.02],
+            ['MRU', 'Ouguiya mauritanien', 'Mauritanie', 'UM', '🇲🇷', 39.75, 'fiat', 0.04],
+            ['MUR', 'Roupie mauricienne', 'Maurice', '₨', '🇲🇺', 46.35, 'fiat', 0.09],
+            ['MVR', 'Rufiyaa maldivienne', 'Maldives', 'Rf', '🇲🇻', 15.42, 'fiat', 0.00],
+            ['MWK', 'Kwacha malawite', 'Malawi', 'MK', '🇲🇼', 1735.0, 'fiat', -0.15],
+            ['MXN', 'Peso mexicain', 'Mexique', 'Mex$', '🇲🇽', 16.62, 'fiat', 0.48],
+            ['MYR', 'Ringgit malaisien', 'Malaisie', 'RM', '🇲🇾', 4.745, 'fiat', 0.11],
+            ['MZN', 'Metical mozambicain', 'Mozambique', 'MT', '🇲🇿', 63.88, 'fiat', 0.02],
+            ['NAD', 'Dollar namibien', 'Namibie', 'N$', '🇳🇦', 18.74, 'fiat', 0.39],
+            ['NGN', 'Naira nigérian', 'Nigeria', '₦', '🇳🇬', 1245.0, 'fiat', -0.75],
+            ['NIO', 'Córdoba nicaraguayen', 'Nicaragua', 'C$', '🇳🇮', 36.75, 'fiat', 0.00],
+            ['NOK', 'Couronne norvégienne', 'Norvège', 'kr', '🇳🇴', 10.74, 'fiat', 0.29],
+            ['NPR', 'Roupie népalaise', 'Népal', '₨', '🇳🇵', 133.40, 'fiat', 0.14],
+            ['NZD', 'Dollar néo-zélandais', 'Nouvelle-Zélande', 'NZ$', '🇳🇿', 1.664, 'fiat', 0.24],
+            ['OMR', 'Rial omanais', 'Oman', '﷼', '🇴🇲', 0.3845, 'fiat', 0.00],
+            ['PAB', 'Balboa panaméen', 'Panama', 'B/.', '🇵🇦', 1.000, 'fiat', 0.00],
+            ['PEN', 'Sol péruvien', 'Pérou', 'S/', '🇵🇪', 3.705, 'fiat', 0.18],
+            ['PGK', 'Kina papou-néo-guinéen', 'Papouasie-Nouvelle-Guinée', 'K', '🇵🇬', 3.795, 'fiat', -0.04],
+            ['PHP', 'Peso philippin', 'Philippines', '₱', '🇵🇭', 56.55, 'fiat', 0.13],
+            ['PKR', 'Roupie pakistanaise', 'Pakistan', '₨', '🇵🇰', 278.10, 'fiat', 0.07],
+            ['PLN', 'Złoty polonais', 'Pologne', 'zł', '🇵🇱', 3.965, 'fiat', 0.33],
+            ['PYG', 'Guaraní paraguayen', 'Paraguay', '₲', '🇵🇾', 7380.0, 'fiat', -0.06],
+            ['QAR', 'Riyal qatarien', 'Qatar', '﷼', '🇶🇦', 3.640, 'fiat', 0.00],
+            ['RON', 'Leu roumain', 'Roumanie', 'lei', '🇷🇴', 4.585, 'fiat', 0.12],
+            ['RSD', 'Dinar serbe', 'Serbie', 'дин.', '🇷🇸', 108.10, 'fiat', 0.12],
+            ['RUB', 'Rouble russe', 'Russie', '₽', '🇷🇺', 92.45, 'fiat', -0.41],
+            ['RWF', 'Franc rwandais', 'Rwanda', 'FRw', '🇷🇼', 1292.0, 'fiat', -0.08],
+            ['SBD', 'Dollar des Îles Salomon', 'Îles Salomon', 'SI$', '🇸🇧', 8.48, 'fiat', 0.05],
+            ['SCR', 'Roupie seychelloise', 'Seychelles', '₨', '🇸🇨', 13.65, 'fiat', 0.19],
+            ['SDG', 'Livre soudanaise', 'Soudan', 'ج.س.', '🇸🇩', 601.0, 'fiat', 0.00],
+            ['SEK', 'Couronne suédoise', 'Suède', 'kr', '🇸🇪', 10.64, 'fiat', -0.35],
+            ['SGD', 'Dollar de Singapour', 'Singapour', 'S$', '🇸🇬', 1.348, 'fiat', 0.09],
+            ['SHP', 'Livre de Sainte-Hélène', 'Sainte-Hélène', '£', '🇸🇭', 0.788, 'fiat', -0.18],
+            ['SLE', 'Leone sierra-léonais', 'Sierra Leone', 'Le', '🇸🇱', 22.55, 'fiat', -0.11],
+            ['SOS', 'Shilling somalien', 'Somalie', 'Sh', '🇸🇴', 571.0, 'fiat', 0.00],
+            ['SRD', 'Dollar surinamais', 'Suriname', '$', '🇸🇷', 35.15, 'fiat', 0.14],
+            ['SSP', 'Livre sud-soudanaise', 'Soudan du Sud', '£', '🇸🇸', 1560.0, 'fiat', -0.22],
+            ['STN', 'Dobra santoméen', 'Sao Tomé-et-Principe', 'Db', '🇸🇹', 22.58, 'fiat', 0.12],
+            ['SYP', 'Livre syrienne', 'Syrie', '£S', '🇸🇾', 13000, 'fiat', 0.00],
+            ['SZL', 'Lilangeni swazi', 'Eswatini', 'E', '🇸🇿', 18.74, 'fiat', 0.39],
+            ['THB', 'Baht thaïlandais', 'Thaïlande', '฿', '🇹🇭', 36.55, 'fiat', -0.16],
+            ['TJS', 'Somoni tadjik', 'Tadjikistan', 'ЅМ', '🇹🇯', 10.94, 'fiat', 0.03],
+            ['TMT', 'Manat turkmène', 'Turkménistan', 'T', '🇹🇲', 3.500, 'fiat', 0.00],
+            ['TOP', 'Paʻanga tongan', 'Tonga', 'T$', '🇹🇴', 2.365, 'fiat', 0.08],
+            ['TTD', 'Dollar trinidadien', 'Trinité-et-Tobago', 'TT$', '🇹🇹', 6.785, 'fiat', 0.01],
+            ['TWD', 'Nouveau dollar taïwanais', 'Taïwan', 'NT$', '🇹🇼', 32.15, 'fiat', -0.12],
+            ['TZS', 'Shilling tanzanien', 'Tanzanie', 'TSh', '🇹🇿', 2575.0, 'fiat', -0.05],
+            ['UAH', 'Hryvnia ukrainienne', 'Ukraine', '₴', '🇺🇦', 39.25, 'fiat', -0.17],
+            ['UGX', 'Shilling ougandais', 'Ouganda', 'USh', '🇺🇬', 3845.0, 'fiat', 0.21],
+            ['UYU', 'Peso uruguayen', 'Uruguay', '$U', '🇺🇾', 38.45, 'fiat', 0.16],
+            ['UZS', 'Sum ouzbek', 'Ouzbékistan', 'soʻm', '🇺🇿', 12650, 'fiat', -0.09],
+            ['VES', 'Bolívar vénézuélien', 'Venezuela', 'Bs.S', '🇻🇪', 36.28, 'fiat', -0.04],
+            ['VND', 'Đồng vietnamien', 'Viêt Nam', '₫', '🇻🇳', 24980, 'fiat', -0.11],
+            ['VUV', 'Vatu vanuatais', 'Vanuatu', 'VT', '🇻🇺', 120.4, 'fiat', 0.07],
+            ['WST', 'Tala samoan', 'Samoa', 'WS$', '🇼🇸', 2.765, 'fiat', 0.09],
+            ['XCD', 'Dollar des Caraïbes orientales', 'Antigua, Dominique, Sainte-Lucie', 'EC$', '🇦🇬', 2.700, 'fiat', 0.00],
+            ['XPF', 'Franc CFP', 'Polynésie française, Nouvelle-Calédonie', '₣', '🇵🇫', 110.02, 'fiat', 0.12],
+            ['YER', 'Rial yéménite', 'Yémen', '﷼', '🇾🇪', 250.35, 'fiat', 0.00],
+            ['ZMW', 'Kwacha zambien', 'Zambie', 'ZK', '🇿🇲', 24.85, 'fiat', 0.45],
+            ['ZWL', 'Dollar zimbabwéen', 'Zimbabwe', 'Z$', '🇿🇼', 13.55, 'fiat', -0.10]
+        ];
+
+        const CURRENCIES = RAW_CURRENCIES.map(([code, name, region, symbol, flag, rateFromUsd, category, change24h]) => ({
+            code,
+            name,
+            region,
+            symbol,
+            flag,
+            rateFromUsd,
+            category,
+            change24h,
+            decimals: category === 'crypto' ? 6 : (rateFromUsd >= 100 ? 2 : 2)
+        }));
+
+        // État global de l'application
+        const state = {
+            from: 'EUR',
+            to: 'USD',
+            activeModalTarget: null, // 'from' ou 'to'
+            activeFilter: 'all',
+            history: [
+                { from: 'EUR', to: 'USD', amount: '1 000', result: '1 084,60' },
+                { from: 'EUR', to: 'CHF', amount: '500', result: '480,48' }
+            ]
+        };
+
+        /**
+         * 2. SYNCHRONISATION ASYNCHRONE NON BLOQUANTE DES TAUX EN DIRECT
+         */
+        async function syncLiveRates() {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                const response = await fetch('https://open.er-api.com/v6/latest/USD', {
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) return;
+                const data = await response.json();
+                if (data && data.result === 'success' && data.rates) {
+                    CURRENCIES.forEach(curr => {
+                        if (curr.category !== 'crypto' && typeof data.rates[curr.code] === 'number') {
+                            curr.rateFromUsd = data.rates[curr.code];
+                        }
+                    });
+                    updateUI('from');
+                }
+            } catch (err) {
+                // Bascule silencieuse sur les taux intégrés hors-ligne
+            }
+        }
+
+        /**
+         * 3. LOGIQUE DE CONVERSION & INTERFACE UTILISATEUR
+         */
+        const elAmountFrom = document.getElementById('amount-from');
+        const elAmountTo = document.getElementById('amount-to');
+        const elRateDisplay = document.getElementById('rate-display');
+        const elTrendBadge = document.getElementById('trend-badge');
+        const elHistoryList = document.getElementById('history-list');
+
+        function getCurrency(code) {
+            return CURRENCIES.find(c => c.code === code) || CURRENCIES[0];
+        }
+
+        function getExchangeRate(fromCode, toCode) {
+            const fromCurr = getCurrency(fromCode);
+            const toCurr = getCurrency(toCode);
+            if (!fromCurr.rateFromUsd || !toCurr.rateFromUsd) return 1;
+            return toCurr.rateFromUsd / fromCurr.rateFromUsd;
+        }
+
+        function formatInputNumber(val, decimals) {
+            if (isNaN(val) || val === '') return '';
+            let precision = decimals;
+            if (val > 0 && val < 0.0001) precision = 8;
+            else if (val > 0 && val < 0.01) precision = 6;
+            else if (val > 0 && val < 1) precision = 4;
+            return Number(val.toFixed(precision));
+        }
+
+        function formatRateText(rate) {
+            if (rate >= 1000) return rate.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
+            if (rate >= 1) return rate.toFixed(4);
+            if (rate >= 0.001) return rate.toFixed(6);
+            return rate.toFixed(8);
+        }
+
+        function updateUI(source = 'from') {
+            const currFrom = getCurrency(state.from);
+            const currTo = getCurrency(state.to);
+            const rate = getExchangeRate(state.from, state.to);
+
+            // Mise à jour des boutons et libellés de devises
+            document.getElementById('flag-from').textContent = currFrom.flag;
+            document.getElementById('code-from').textContent = currFrom.code;
+            document.getElementById('from-name-sub').textContent = `${currFrom.name} • ${currFrom.region}`;
+
+            document.getElementById('flag-to').textContent = currTo.flag;
+            document.getElementById('code-to').textContent = currTo.code;
+            document.getElementById('to-name-sub').textContent = `${currTo.name} • ${currTo.region}`;
+
+            // Calcul bidirectionnel immédiat
+            if (source === 'from') {
+                const raw = String(elAmountFrom.value).replace(',', '.');
+                const val = parseFloat(raw);
+                if (!isNaN(val)) {
+                    elAmountTo.value = formatInputNumber(val * rate, currTo.decimals);
+                } else {
+                    elAmountTo.value = '';
+                }
+            } else {
+                const raw = String(elAmountTo.value).replace(',', '.');
+                const val = parseFloat(raw);
+                if (!isNaN(val)) {
+                    elAmountFrom.value = formatInputNumber(val / rate, currFrom.decimals);
+                } else {
+                    elAmountFrom.value = '';
+                }
+            }
+
+            // Affichage du taux unitaire
+            elRateDisplay.textContent = `1 ${currFrom.code} = ${formatRateText(rate)} ${currTo.code}`;
+
+            // Badge de variation 24h
+            const netChange = +(currTo.change24h - currFrom.change24h).toFixed(2);
+            const isPositive = netChange >= 0;
+            elTrendBadge.className = `inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-medium border ${
+                isPositive 
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+            }`;
+            elTrendBadge.innerHTML = `
+                <i class="ph-bold ${isPositive ? 'ph-trend-up' : 'ph-trend-down'}"></i>
+                ${isPositive ? '+' : ''}${netChange}% (24h)
+            `;
+
+            updateSparkline(rate, isPositive);
+        }
+
+        /**
+         * 4. RENDU IMMÉDIAT ET INTERACTIF DE LA COURBE SVG 7 JOURS
+         */
+        function updateSparkline(baseRate, isPositive) {
+            const sparkLine = document.getElementById('spark-line');
+            const sparkArea = document.getElementById('spark-area');
+            const sparkPoints = document.getElementById('spark-points');
+            const sparkRange = document.getElementById('sparkline-range');
+            const stopTop = document.getElementById('spark-stop-top');
+            const stopBottom = document.getElementById('spark-stop-bottom');
+            const tooltip = document.getElementById('spark-tooltip');
+
+            if (!sparkLine || !sparkArea || !sparkPoints) return;
+
+            const days = ['J-6', 'J-5', 'J-4', 'J-3', 'J-2', 'Hier', 'Auj.'];
+            const seed = state.from.charCodeAt(0) * 13 + state.to.charCodeAt(1) * 7;
+            const values = [];
+
+            for (let i = 0; i < 7; i++) {
+                const progress = i / 6;
+                const drift = (isPositive ? 1 : -1) * (progress - 0.5) * 0.018;
+                const oscillation = Math.sin(seed + i * 1.45) * 0.009 + Math.cos(seed * 0.5 + i * 2.1) * 0.005;
+                const factor = i === 6 ? 1 : (1 + drift + oscillation);
+                values.push(baseRate * factor);
+            }
+
+            const minVal = Math.min(...values);
+            const maxVal = Math.max(...values);
+            const span = (maxVal - minVal) || (baseRate * 0.01) || 1;
+
+            const width = 160;
+            const height = 40;
+            const padX = 6;
+            const padY = 6;
+
+            const pts = values.map((val, idx) => {
+                const x = padX + (idx / (values.length - 1)) * (width - padX * 2);
+                const norm = (val - minVal) / span;
+                const y = (height - padY) - norm * (height - padY * 2);
+                return { x, y, val, day: days[idx] };
+            });
+
+            // Construction d'une courbe de Bézier cubique lisse
+            let linePath = `M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+            for (let i = 0; i < pts.length - 1; i++) {
+                const p0 = pts[i];
+                const p1 = pts[i + 1];
+                const midX = ((p0.x + p1.x) / 2).toFixed(1);
+                linePath += ` C ${midX},${p0.y.toFixed(1)} ${midX},${p1.y.toFixed(1)} ${p1.x.toFixed(1)},${p1.y.toFixed(1)}`;
+            }
+
+            const areaPath = `${linePath} L ${pts[pts.length - 1].x.toFixed(1)},${height} L ${pts[0].x.toFixed(1)},${height} Z`;
+
+            const strokeColor = isPositive ? '#818cf8' : '#f472b6';
+            const gradColor = isPositive ? '#6366f1' : '#ec4899';
+
+            sparkLine.setAttribute('d', linePath);
+            sparkLine.setAttribute('stroke', strokeColor);
+            sparkArea.setAttribute('d', areaPath);
+            if (stopTop) stopTop.setAttribute('stop-color', gradColor);
+            if (stopBottom) stopBottom.setAttribute('stop-color', gradColor);
+
+            sparkRange.textContent = `${formatRateText(minVal)} - ${formatRateText(maxVal)}`;
+
+            // Points interactifs au survol
+            sparkPoints.innerHTML = pts.map((p, idx) => `
+                <g class="spark-node cursor-pointer" data-idx="${idx}">
+                    <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="7" fill="transparent"></circle>
+                    <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${idx === 6 ? '3' : '2.2'}" fill="${idx === 6 ? '#ffffff' : strokeColor}" stroke="#090b10" stroke-width="1"></circle>
+                </g>
+            `).join('');
+
+            sparkPoints.querySelectorAll('.spark-node').forEach(node => {
+                const idx = Number(node.dataset.idx);
+                const point = pts[idx];
+                node.addEventListener('mouseenter', () => {
+                    tooltip.textContent = `${point.day} : ${formatRateText(point.val)}`;
+                    tooltip.classList.remove('hidden');
+                });
+                node.addEventListener('mouseleave', () => {
+                    tooltip.classList.add('hidden');
+                });
+            });
+        }
+
+        function renderHistory() {
+            elHistoryList.innerHTML = state.history.map(item => `
+                <li class="flex justify-between items-center text-slate-300/90 py-0.5">
+                    <span>${item.amount} ${item.from}</span>
+                    <span class="text-slate-500">→</span>
+                    <span class="text-indigo-300">${item.result} ${item.to}</span>
+                </li>
+            `).join('');
+        }
+
+        // Écouteurs d'événements des champs numériques
+        elAmountFrom.addEventListener('input', () => updateUI('from'));
+        elAmountTo.addEventListener('input', () => updateUI('to'));
+
+        // Boutons montants prédéfinis
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                elAmountFrom.value = btn.dataset.preset;
+                updateUI('from');
+            });
+        });
+
+        // Bouton d'inversion (Swap)
+        let rotationDeg = 0;
+        document.getElementById('swap-button').addEventListener('click', () => {
+            rotationDeg += 180;
+            document.getElementById('swap-icon').style.transform = `rotate(${rotationDeg}deg)`;
+            
+            const temp = state.from;
+            state.from = state.to;
+            state.to = temp;
+            updateUI('from');
+        });
+
+        // Raccourcis paires populaires
+        document.querySelectorAll('.pair-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const [f, t] = chip.dataset.pair.split('-');
+                state.from = f;
+                state.to = t;
+                updateUI('from');
+            });
+        });
+
+        // Sauvegarder dans l'historique
+        document.getElementById('save-history-btn').addEventListener('click', () => {
+            const amt = parseFloat(elAmountFrom.value);
+            const res = parseFloat(elAmountTo.value);
+            if (!isNaN(amt) && !isNaN(res)) {
+                state.history.unshift({
+                    from: state.from,
+                    to: state.to,
+                    amount: amt.toLocaleString('fr-FR'),
+                    result: res.toLocaleString('fr-FR', { maximumFractionDigits: 4 })
+                });
+                if (state.history.length > 5) state.history.pop();
+                renderHistory();
+            }
+        });
+
+        // Copier le résultat dans le presse-papiers
+        document.getElementById('copy-result').addEventListener('click', () => {
+            const textToCopy = `${elAmountTo.value} ${state.to}`;
+            const tempInput = document.createElement('input');
+            tempInput.value = textToCopy;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+
+            const copyTextEl = document.getElementById('copy-text');
+            copyTextEl.textContent = 'Copié !';
+            setTimeout(() => { copyTextEl.textContent = 'Copier'; }, 1500);
+        });
+
+        /**
+         * 5. GESTION DE LA MODALE DE SÉLECTION DE DEVISE (RECHERCHE SANS ACCENT + FILTRES)
+         */
+        const modal = document.getElementById('currency-modal');
+        const modalContent = document.getElementById('modal-content');
+        const searchInput = document.getElementById('currency-search');
+        const currencyListEl = document.getElementById('currency-list');
+
+        function normalizeText(str) {
+            return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        }
+
+        function openModal(target) {
+            state.activeModalTarget = target;
+            searchInput.value = '';
+            renderCurrencyList('');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            requestAnimationFrame(() => {
+                modal.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+                modalContent.classList.add('scale-100');
+                searchInput.focus();
+            });
+        }
+
+        function closeModal() {
+            modal.classList.add('opacity-0');
+            modalContent.classList.remove('scale-100');
+            modalContent.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }, 200);
+        }
+
+        function renderCurrencyList(filterText) {
+            const q = normalizeText(filterText);
+            const filtered = CURRENCIES.filter(c => {
+                const matchesCategory =
+                    state.activeFilter === 'all' ||
+                    (state.activeFilter === 'popular' && c.category === 'popular') ||
+                    (state.activeFilter === 'crypto' && c.category === 'crypto');
+
+                if (!matchesCategory) return false;
+                if (!q) return true;
+
+                return (
+                    normalizeText(c.code).includes(q) ||
+                    normalizeText(c.name).includes(q) ||
+                    normalizeText(c.region).includes(q)
+                );
+            });
+
+            const selectedCode = state.activeModalTarget === 'from' ? state.from : state.to;
+
+            if (filtered.length === 0) {
+                currencyListEl.innerHTML = `<div class="text-center py-6 text-xs text-slate-400">Aucune devise trouvée pour « ${filterText} »</div>`;
+                return;
+            }
+
+            currencyListEl.innerHTML = filtered.map(c => {
+                const isSelected = c.code === selectedCode;
+                return `
+                    <button type="button" data-code="${c.code}" class="currency-option w-full flex items-center justify-between p-2.5 rounded-xl transition cursor-pointer ${
+                        isSelected ? 'bg-indigo-500/20 border border-indigo-500/40' : 'hover:bg-white/[0.06] border border-transparent'
+                    }">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <span class="text-2xl shrink-0">${c.flag}</span>
+                            <div class="text-left min-w-0">
+                                <div class="font-semibold text-sm text-white flex items-center gap-1.5">
+                                    <span>${c.code}</span>
+                                    <span class="text-[11px] font-normal text-slate-400 truncate">— ${c.name}</span>
+                                </div>
+                                <div class="text-[11px] text-slate-500 truncate">${c.region}</div>
+                            </div>
+                        </div>
+                        <div class="text-right shrink-0 ml-2">
+                            <span class="font-mono text-xs text-slate-400">${c.symbol}</span>
+                            ${isSelected ? '<i class="ph-bold ph-check text-indigo-400 ml-1.5"></i>' : ''}
+                        </div>
+                    </button>
+                `;
+            }).join('');
+
+            currencyListEl.querySelectorAll('.currency-option').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const chosen = btn.dataset.code;
+                    if (state.activeModalTarget === 'from') {
+                        if (chosen === state.to) state.to = state.from;
+                        state.from = chosen;
+                    } else {
+                        if (chosen === state.from) state.from = state.to;
+                        state.to = chosen;
+                    }
+                    closeModal();
+                    updateUI('from');
+                });
+            });
+        }
+
+        // Onglets de filtres dans la modale
+        document.querySelectorAll('.filter-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                state.activeFilter = tab.dataset.filter;
+                document.querySelectorAll('.filter-tab').forEach(t => {
+                    t.className = 'filter-tab px-3 py-1 rounded-lg text-xs font-medium bg-white/[0.04] text-slate-400 hover:text-white border border-white/[0.06] transition cursor-pointer';
+                });
+                tab.className = 'filter-tab px-3 py-1 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 transition cursor-pointer';
+                renderCurrencyList(searchInput.value);
+            });
+        });
+
+        document.getElementById('btn-from').addEventListener('click', () => openModal('from'));
+        document.getElementById('btn-to').addEventListener('click', () => openModal('to'));
+        document.getElementById('close-modal').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+        searchInput.addEventListener('input', (e) => renderCurrencyList(e.target.value));
+
+        // Horloge temps réel
+        function updateClock() {
+            const now = new Date();
+            const clockEl = document.getElementById('live-clock');
+            if (clockEl) clockEl.textContent = now.toLocaleTimeString('fr-FR');
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        /**
+         * 6. SCÈNE 3D THREE.JS : LIASSES DE BILLETS EN APESANTEUR (54 LIASSES PROCÉDURALES)
+         */
+        function createBanknoteFaceTexture(palette) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            // Fond papier fiduciaire sombre texturé
+            const bgGrad = ctx.createLinearGradient(0, 0, 512, 256);
+            bgGrad.addColorStop(0, palette.bgStart);
+            bgGrad.addColorStop(0.5, palette.bgMid);
+            bgGrad.addColorStop(1, palette.bgEnd);
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, 512, 256);
+
+            // Micro-trame guillochée de fond (ondes sinusoïdales entrelacées)
+            ctx.save();
+            ctx.strokeStyle = palette.guilloche;
+            ctx.lineWidth = 0.8;
+            for (let y = 16; y < 240; y += 7) {
+                ctx.beginPath();
+                for (let x = 14; x <= 498; x += 4) {
+                    const wave = Math.sin(x * 0.045 + y * 0.12) * 4.5 + Math.cos(x * 0.09 - y * 0.08) * 2.5;
+                    if (x === 14) ctx.moveTo(x, y + wave);
+                    else ctx.lineTo(x, y + wave);
+                }
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Cadres ornementaux extérieurs et intérieurs
+            ctx.strokeStyle = palette.border;
+            ctx.lineWidth = 4;
+            ctx.strokeRect(14, 14, 484, 228);
+
+            ctx.strokeStyle = palette.accent;
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(22, 22, 468, 212);
+
+            // Rosace centrale guillochée complexe
+            ctx.save();
+            ctx.translate(256, 128);
+            for (let layer = 0; layer < 2; layer++) {
+                ctx.strokeStyle = layer === 0 ? palette.accent : palette.guillocheStrong;
+                ctx.lineWidth = layer === 0 ? 1.4 : 0.9;
+                const petals = layer === 0 ? 18 : 24;
+                const rBase = layer === 0 ? 58 : 44;
+                const rAmp = layer === 0 ? 14 : 10;
+                ctx.beginPath();
+                for (let a = 0; a <= Math.PI * 2 + 0.05; a += 0.03) {
+                    const r = rBase + Math.sin(a * petals) * rAmp;
+                    const px = Math.cos(a) * r;
+                    const py = Math.sin(a) * r;
+                    if (a === 0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+                ctx.stroke();
+            }
+
+            // Médaillon central et symbole monétaire
+            ctx.fillStyle = palette.medallionBg;
+            ctx.beginPath();
+            ctx.arc(0, 0, 32, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = palette.accent;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = palette.textLight;
+            ctx.font = 'bold 30px Georgia, serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(palette.symbol, 0, 2);
+            ctx.restore();
+
+            // Numéros de valeur aux 4 coins
+            ctx.fillStyle = palette.textLight;
+            ctx.font = 'bold 26px "JetBrains Mono", monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText(palette.value, 32, 28);
+
+            ctx.textAlign = 'right';
+            ctx.fillText(palette.value, 480, 28);
+
+            ctx.textBaseline = 'bottom';
+            ctx.textAlign = 'left';
+            ctx.fillText(palette.value, 32, 228);
+
+            ctx.textAlign = 'right';
+            ctx.fillText(palette.value, 480, 228);
+
+            // Inscriptions fiduciaires supérieures et inférieures
+            ctx.fillStyle = palette.accent;
+            ctx.font = '600 10px "Inter", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`BANQUE CENTRALE RÉSERVE • ${palette.code} ${palette.value}`, 256, 36);
+            ctx.fillText(`SÉRIE INTERNATIONALE • ${palette.serial}`, 256, 220);
+
+            // Numéros de série latéraux
+            ctx.fillStyle = palette.serialColor;
+            ctx.font = '500 11px "JetBrains Mono", monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(palette.serial, 34, 72);
+            ctx.textAlign = 'right';
+            ctx.fillText(palette.serial, 478, 184);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.anisotropy = 4;
+            return tex;
+        }
+
+        function createBanknoteEdgeTexture(palette) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = palette.edgeBase;
+            ctx.fillRect(0, 0, 256, 64);
+
+            // Stries horizontales simulant les dizaines de billets empilés
+            for (let y = 0; y < 64; y += 2) {
+                ctx.fillStyle = (y % 4 === 0) ? palette.edgeLight : palette.edgeDark;
+                ctx.fillRect(0, y, 256, 1);
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            return tex;
+        }
+
+        function createPaperStrapTexture(palette) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+
+            // Banderole papier bancaire contrastée
+            ctx.fillStyle = palette.strapBg;
+            ctx.fillRect(0, 0, 256, 128);
+
+            // Filets de sécurité sur les bords de la banderole
+            ctx.fillStyle = palette.strapStripe;
+            ctx.fillRect(0, 10, 256, 6);
+            ctx.fillRect(0, 112, 256, 6);
+
+            // Marquage bancaire sur la banderole
+            ctx.fillStyle = palette.strapText;
+            ctx.font = 'bold 20px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${palette.symbol}${palette.strapTotal}`, 128, 54);
+
+            ctx.font = '600 10px "Inter", sans-serif';
+            ctx.fillText(`100 × ${palette.value} ${palette.code}`, 128, 80);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.anisotropy = 4;
+            return tex;
+        }
+
+        function init3DBackground() {
+            if (typeof THREE === 'undefined') return;
+            try {
+                const canvas = document.getElementById('canvas-bg');
+                const scene = new THREE.Scene();
+                scene.fog = new THREE.FogExp2(0x050608, 0.026);
+
+                const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 120);
+                camera.position.z = 22;
+
+                const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                renderer.toneMappingExposure = 1.25;
+
+                // Éclairage atmosphérique & reflets métalliques subtils
+                const ambientLight = new THREE.AmbientLight(0x26293d, 2.0);
+                scene.add(ambientLight);
+
+                const lightIndigo = new THREE.PointLight(0x6366f1, 4.2, 60);
+                lightIndigo.position.set(14, 12, 16);
+                scene.add(lightIndigo);
+
+                const lightEmerald = new THREE.PointLight(0x10b981, 3.4, 55);
+                lightEmerald.position.set(-15, -10, 14);
+                scene.add(lightEmerald);
+
+                const lightGold = new THREE.PointLight(0xf59e0b, 2.6, 50);
+                lightGold.position.set(0, 16, -4);
+                scene.add(lightGold);
+
+                // 4 Palettes sombres luxueuses fintech
+                const palettes = [
+                    {
+                        // Vert Émeraude Profond (USD / Réserve)
+                        code: 'USD', symbol: '$', value: '100', strapTotal: '10,000',
+                        serial: 'NF 88429104 A',
+                        bgStart: '#071c15', bgMid: '#0d2e23', bgEnd: '#061611',
+                        guilloche: 'rgba(52, 211, 153, 0.14)', guillocheStrong: 'rgba(110, 231, 183, 0.35)',
+                        border: '#10b981', accent: '#6ee7b7', medallionBg: '#04120d',
+                        textLight: '#ecfdf5', serialColor: '#34d399',
+                        edgeBase: '#132a22', edgeLight: '#284b3e', edgeDark: '#091612',
+                        strapBg: '#d1fae5', strapStripe: '#059669', strapText: '#064e3b'
+                    },
+                    {
+                        // Bleu Nuit / Indigo (EUR)
+                        code: 'EUR', symbol: '€', value: '500', strapTotal: '50,000',
+                        serial: 'EU 49201753 X',
+                        bgStart: '#0b1026', bgMid: '#161f47', bgEnd: '#090d1f',
+                        guilloche: 'rgba(129, 140, 248, 0.16)', guillocheStrong: 'rgba(165, 180, 252, 0.38)',
+                        border: '#6366f1', accent: '#a5b4fc', medallionBg: '#070a1a',
+                        textLight: '#eef2ff', serialColor: '#818cf8',
+                        edgeBase: '#181e38', edgeLight: '#313c6b', edgeDark: '#0b0e1c',
+                        strapBg: '#e0e7ff', strapStripe: '#4f46e5', strapText: '#1e1b4b'
+                    },
+                    {
+                        // Or Sombre / Bronze (CHF / Lingot)
+                        code: 'CHF', symbol: '₣', value: '1000', strapTotal: '100,000',
+                        serial: 'CH 71058392 G',
+                        bgStart: '#1f1608', bgMid: '#36260d', bgEnd: '#171005',
+                        guilloche: 'rgba(251, 191, 36, 0.15)', guillocheStrong: 'rgba(253, 224, 71, 0.36)',
+                        border: '#d97706', accent: '#fcd34d', medallionBg: '#140e04',
+                        textLight: '#fffbeb', serialColor: '#fbbf24',
+                        edgeBase: '#2e2210', edgeLight: '#574120', edgeDark: '#171007',
+                        strapBg: '#fef3c7', strapStripe: '#b45309', strapText: '#451a03'
+                    },
+                    {
+                        // Argent / Platine Sombre (GBP)
+                        code: 'GBP', symbol: '£', value: '50', strapTotal: '5,000',
+                        serial: 'UK 63910482 P',
+                        bgStart: '#11141c', bgMid: '#1f2533', bgEnd: '#0c0e14',
+                        guilloche: 'rgba(148, 163, 184, 0.16)', guillocheStrong: 'rgba(226, 232, 240, 0.36)',
+                        border: '#64748b', accent: '#cbd5e1', medallionBg: '#090b10',
+                        textLight: '#f8fafc', serialColor: '#94a3b8',
+                        edgeBase: '#1e2430', edgeLight: '#3b4559', edgeDark: '#0f1218',
+                        strapBg: '#f1f5f9', strapStripe: '#475569', strapText: '#0f172a'
+                    }
+                ];
+
+                // Pré-génération des matériaux partagés pour des performances fluides à 60 FPS
+                const bundleConfigs = palettes.map(pal => {
+                    const faceTex = createBanknoteFaceTexture(pal);
+                    const edgeTex = createBanknoteEdgeTexture(pal);
+                    const strapTex = createPaperStrapTexture(pal);
+
+                    const faceMat = new THREE.MeshStandardMaterial({
+                        map: faceTex,
+                        roughness: 0.38,
+                        metalness: 0.25
+                    });
+
+                    const edgeMat = new THREE.MeshStandardMaterial({
+                        map: edgeTex,
+                        roughness: 0.65,
+                        metalness: 0.15
+                    });
+
+                    const strapMat = new THREE.MeshStandardMaterial({
+                        map: strapTex,
+                        roughness: 0.45,
+                        metalness: 0.18
+                    });
+
+                    // Ordre des faces BoxGeometry : +X, -X, +Y (haut), -Y (bas), +Z, -Z
+                    return {
+                        stackMaterials: [edgeMat, edgeMat, faceMat, faceMat, edgeMat, edgeMat],
+                        strapMaterial: strapMat
+                    };
+                });
+
+                // Géométries de base d'une liasse de billets (proportion billet réel ~2.1 : 1)
+                const stackWidth = 2.2;
+                const stackHeight = 0.24;
+                const stackDepth = 1.02;
+                const stackGeo = new THREE.BoxGeometry(stackWidth, stackHeight, stackDepth);
+                const strapGeo = new THREE.BoxGeometry(0.46, stackHeight + 0.014, stackDepth + 0.014);
+
+                const bundles = [];
+                const BUNDLE_COUNT = 54;
+
+                for (let i = 0; i < BUNDLE_COUNT; i++) {
+                    const cfg = bundleConfigs[i % bundleConfigs.length];
+                    const group = new THREE.Group();
+
+                    const stackMesh = new THREE.Mesh(stackGeo, cfg.stackMaterials);
+                    const strapMesh = new THREE.Mesh(strapGeo, cfg.strapMaterial);
+                    group.add(stackMesh);
+                    group.add(strapMesh);
+
+                    // Répartition sur plusieurs plans de profondeur Z et tailles variées
+                    const scale = Math.random() * 0.65 + 0.55;
+                    group.scale.set(scale, scale, scale);
+
+                    group.position.x = (Math.random() - 0.5) * 34;
+                    group.position.y = (Math.random() - 0.5) * 22;
+                    group.position.z = (Math.random() - 0.5) * 24 - 4;
+
+                    group.rotation.set(
+                        Math.random() * Math.PI * 2,
+                        Math.random() * Math.PI * 2,
+                        Math.random() * Math.PI * 2
+                    );
+
+                    bundles.push({
+                        group,
+                        baseX: group.position.x,
+                        baseY: group.position.y,
+                        floatSpeed: Math.random() * 0.45 + 0.2,
+                        offset: Math.random() * Math.PI * 2,
+                        ampX: Math.random() * 0.9 + 0.25,
+                        ampY: Math.random() * 1.1 + 0.35,
+                        rotX: (Math.random() - 0.5) * 0.008,
+                        rotY: (Math.random() - 0.5) * 0.01,
+                        rotZ: (Math.random() - 0.5) * 0.007
+                    });
+
+                    scene.add(group);
+                }
+
+                let mouseX = 0;
+                let mouseY = 0;
+                window.addEventListener('mousemove', (e) => {
+                    mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+                    mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+                });
+
+                window.addEventListener('resize', () => {
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+
+                const clock = new THREE.Clock();
+                function animate() {
+                    requestAnimationFrame(animate);
+                    const elapsed = clock.getElapsedTime();
+
+                    bundles.forEach(item => {
+                        item.group.position.y = item.baseY + Math.sin(elapsed * item.floatSpeed + item.offset) * item.ampY;
+                        item.group.position.x = item.baseX + Math.cos(elapsed * item.floatSpeed * 0.75 + item.offset) * item.ampX;
+                        item.group.rotation.x += item.rotX;
+                        item.group.rotation.y += item.rotY;
+                        item.group.rotation.z += item.rotZ;
+                    });
+
+                    camera.position.x += (mouseX * 1.8 - camera.position.x) * 0.035;
+                    camera.position.y += (-mouseY * 1.4 - camera.position.y) * 0.035;
+                    camera.lookAt(scene.position);
+
+                    renderer.render(scene, camera);
+                }
+
+                animate();
+            } catch (e) {
+                // Fallback silencieux si WebGL n'est pas disponible
+            }
+        }
+
+        // Initialisation immédiate et sécurisée
+        function bootstrapApp() {
+            updateUI('from');
+            renderHistory();
+            init3DBackground();
+            syncLiveRates();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bootstrapApp);
+        } else {
+            bootstrapApp();
+        }
+    </script>
+    <script>
+  </script>
+  <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch((err) => {
+        console.warn('Service Worker non enregistré :', err);
+      });
+    });
+  }
+</script>
+</body>
+</html>
